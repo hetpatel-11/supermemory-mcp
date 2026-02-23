@@ -1,14 +1,14 @@
-import { MCPServer, object, text, widget } from "mcp-use/server";
+import { MCPServer, text, widget } from "mcp-use/server";
 import { z } from "zod";
 
 const server = new MCPServer({
-  name: "project",
-  title: "project", // display name
+  name: "supermemory-mcp",
+  title: "Supermemory MCP",
   version: "1.0.0",
-  description: "MCP server with MCP Apps integration",
-  baseUrl: process.env.MCP_URL || "http://localhost:3000", // Full base URL (e.g., https://myserver.com)
+  description: "Supermemory memory graph widget for MCP clients",
+  baseUrl: process.env.MCP_URL || "http://localhost:3000",
   favicon: "favicon.ico",
-  websiteUrl: "https://mcp-use.com", // Can be customized later
+  websiteUrl: "https://supermemory.ai",
   icons: [
     {
       src: "icon.svg",
@@ -18,88 +18,146 @@ const server = new MCPServer({
   ],
 });
 
-/**
- * TOOL THAT RETURNS A WIDGET
- * The `widget` config tells mcp-use which widget component to render.
- * The `widget()` helper in the handler passes props to that component.
- * Docs: https://mcp-use.com/docs/typescript/server/mcp-apps
- */
+const toolSchema = z.object({
+  page: z
+    .number()
+    .int()
+    .positive()
+    .max(1000)
+    .optional()
+    .describe("Page number to fetch from Supermemory (default: 1)"),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(500)
+    .optional()
+    .describe("Documents per page (default: 250, max: 500)"),
+  sort: z
+    .enum(["createdAt", "updatedAt"])
+    .optional()
+    .describe("Sort field for documents (default: createdAt)"),
+  order: z
+    .enum(["asc", "desc"])
+    .optional()
+    .describe("Sort order (default: desc)"),
+  variant: z
+    .enum(["console", "consumer"])
+    .optional()
+    .describe("Graph display variant"),
+  showSpacesSelector: z
+    .boolean()
+    .optional()
+    .describe("Whether to show the spaces dropdown in the widget"),
+});
 
-// Fruits data — color values are Tailwind bg-[] classes used by the carousel UI
-const fruits = [
-  { fruit: "mango", color: "bg-[#FBF1E1] dark:bg-[#FBF1E1]/10" },
-  { fruit: "pineapple", color: "bg-[#f8f0d9] dark:bg-[#f8f0d9]/10" },
-  { fruit: "cherries", color: "bg-[#E2EDDC] dark:bg-[#E2EDDC]/10" },
-  { fruit: "coconut", color: "bg-[#fbedd3] dark:bg-[#fbedd3]/10" },
-  { fruit: "apricot", color: "bg-[#fee6ca] dark:bg-[#fee6ca]/10" },
-  { fruit: "blueberry", color: "bg-[#e0e6e6] dark:bg-[#e0e6e6]/10" },
-  { fruit: "grapes", color: "bg-[#f4ebe2] dark:bg-[#f4ebe2]/10" },
-  { fruit: "watermelon", color: "bg-[#e6eddb] dark:bg-[#e6eddb]/10" },
-  { fruit: "orange", color: "bg-[#fdebdf] dark:bg-[#fdebdf]/10" },
-  { fruit: "avocado", color: "bg-[#ecefda] dark:bg-[#ecefda]/10" },
-  { fruit: "apple", color: "bg-[#F9E7E4] dark:bg-[#F9E7E4]/10" },
-  { fruit: "pear", color: "bg-[#f1f1cf] dark:bg-[#f1f1cf]/10" },
-  { fruit: "plum", color: "bg-[#ece5ec] dark:bg-[#ece5ec]/10" },
-  { fruit: "banana", color: "bg-[#fdf0dd] dark:bg-[#fdf0dd]/10" },
-  { fruit: "strawberry", color: "bg-[#f7e6df] dark:bg-[#f7e6df]/10" },
-  { fruit: "lemon", color: "bg-[#feeecd] dark:bg-[#feeecd]/10" },
-];
+const apiResponseSchema = z.object({
+  documents: z.array(z.object({ id: z.string() }).passthrough()),
+  pagination: z
+    .object({
+      currentPage: z.number().optional(),
+      totalPages: z.number().optional(),
+      totalDocuments: z.number().optional(),
+    })
+    .partial()
+    .optional(),
+});
+
+const SUPERMEMORY_API_BASE_URL =
+  process.env.SUPERMEMORY_API_BASE_URL || "https://api.supermemory.ai";
+
+const getErrorMessage = (error: unknown): string => {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return "Unknown error";
+};
+
+const fetchMemoryGraphDocuments = async (input: z.infer<typeof toolSchema>) => {
+  const apiKey = process.env.SUPERMEMORY_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      "SUPERMEMORY_API_KEY is not set on the MCP server environment."
+    );
+  }
+
+  const response = await fetch(
+    `${SUPERMEMORY_API_BASE_URL}/v3/documents/documents`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        page: input.page ?? 1,
+        limit: input.limit ?? 250,
+        sort: input.sort ?? "createdAt",
+        order: input.order ?? "desc",
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(
+      `Supermemory API request failed (${response.status}): ${message}`
+    );
+  }
+
+  const json = await response.json();
+  return apiResponseSchema.parse(json);
+};
 
 server.tool(
   {
-    name: "search-tools",
-    description: "Search for fruits and display the results in a visual widget",
-    schema: z.object({
-      query: z.string().optional().describe("Search query to filter fruits"),
-    }),
+    name: "show-memory-graph",
+    description:
+      "Display your Supermemory documents and memories as an interactive memory graph widget.",
+    schema: toolSchema,
     widget: {
-      name: "product-search-result",
-      invoking: "Searching...",
-      invoked: "Results loaded",
+      name: "memory-graph",
+      invoking: "Loading your Supermemory graph...",
+      invoked: "Memory graph loaded",
     },
   },
-  async ({ query }) => {
-    const results = fruits.filter(
-      (f) => !query || f.fruit.toLowerCase().includes(query.toLowerCase())
-    );
+  async (input) => {
+    const variant = input.variant ?? "consumer";
+    const showSpacesSelector =
+      input.showSpacesSelector ?? (variant === "console");
 
-    // let's emulate a delay to show the loading state
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    try {
+      const data = await fetchMemoryGraphDocuments(input);
+      const loadedCount = data.documents.length;
+      const totalCount = data.pagination?.totalDocuments;
 
-    return widget({
-      props: { query: query ?? "", results },
-      output: text(
-        `Found ${results.length} fruits matching "${query ?? "all"}"`
-      ),
-    });
-  }
-);
-
-server.tool(
-  {
-    name: "get-fruit-details",
-    description: "Get detailed information about a specific fruit",
-    schema: z.object({
-      fruit: z.string().describe("The fruit name"),
-    }),
-    outputSchema: z.object({
-      fruit: z.string(),
-      color: z.string(),
-      facts: z.array(z.string()),
-    }),
-  },
-  async ({ fruit }) => {
-    const found = fruits.find(
-      (f) => f.fruit?.toLowerCase() === fruit?.toLowerCase()
-    );
-    return object({
-      fruit: found?.fruit ?? fruit,
-      color: found?.color ?? "unknown",
-      facts: [
-        `${fruit} is a delicious fruit`,
-        `Color: ${found?.color ?? "unknown"}`,
-      ],
-    });
+      return widget({
+        props: {
+          documents: data.documents,
+          variant,
+          showSpacesSelector,
+          page: input.page ?? 1,
+          limit: input.limit ?? 250,
+          totalDocuments: totalCount,
+        },
+        output: text(
+          totalCount
+            ? `Loaded ${loadedCount} documents for your memory graph (out of ${totalCount}).`
+            : `Loaded ${loadedCount} documents for your memory graph.`
+        ),
+      });
+    } catch (error) {
+      const errorMessage = getErrorMessage(error);
+      return widget({
+        props: {
+          documents: [],
+          variant,
+          showSpacesSelector,
+          errorMessage,
+        },
+        output: text(`Unable to load memory graph: ${errorMessage}`),
+      });
+    }
   }
 );
 

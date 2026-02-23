@@ -1,8 +1,8 @@
 {
-  "name": "project",
+  "name": "supermemory-mcp",
   "type": "module",
   "version": "1.0.0",
-  "description": "MCP server: project",
+  "description": "MCP server for Supermemory memory graph UI",
   "author": "",
   "license": "MIT",
   "keywords": [
@@ -29,6 +29,7 @@
   },
   "dependencies": {
     "@openai/apps-sdk-ui": "^0.2.1",
+    "@supermemory/memory-graph": "latest",
     "mcp-use": "latest",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
