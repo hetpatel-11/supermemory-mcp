@@ -4,6 +4,10 @@
 
 MCP server for rendering your Supermemory data as an interactive memory graph inside MCP-compatible clients (Claude, Inspector, and other MCP Apps hosts).
 
+## Demo Preview
+
+![Supermemory MCP demo](./demo.png)
+
 ## What This Server Does
 
 - Exposes a tool: `show-memory-graph`
@@ -78,6 +82,8 @@ Open Inspector:
 
 ## Deploy
 
+`mcp-use` deploys source from GitHub, but environment variables are attached to the deployment (not committed to the repo).
+
 ```bash
 npm run deploy
 ```
@@ -87,6 +93,30 @@ Before deploy:
 1. Set `SUPERMEMORY_API_KEY` in the deployment environment
 2. Set `MCP_URL` to the final public URL
 3. Redeploy/restart after environment changes
+
+### Deploy with environment variables (recommended)
+
+Set env vars at deploy time:
+
+```bash
+npm run deploy -- \
+  --env SUPERMEMORY_API_KEY=sm_your_key_here \
+  --env SUPERMEMORY_API_BASE_URL=https://api.supermemory.ai
+```
+
+Or use an env file:
+
+```bash
+# .env.production (do not commit this file)
+SUPERMEMORY_API_KEY=sm_your_key_here
+SUPERMEMORY_API_BASE_URL=https://api.supermemory.ai
+```
+
+```bash
+npm run deploy -- --env-file .env.production
+```
+
+If your deployment already exists, re-running deploy updates code from GitHub and keeps/updates deployment env vars based on your flags/dashboard settings.
 
 ## Using with Claude
 
